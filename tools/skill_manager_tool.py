@@ -269,7 +269,17 @@ def _validate_content_size(content: str, label: str = "SKILL.md") -> Optional[st
 
 
 def _resolve_skill_dir(name: str, category: str = None) -> Path:
-    """Build the directory path for a new skill, optionally under a category."""
+    """Build the directory path for a new skill, optionally under a category.
+
+    When ``skills.create_dir`` is configured, author new skills there (flat —
+    any ``category`` stays in the SKILL.md frontmatter): it is the single
+    durable home for authored skills on deployments whose hub is image-managed.
+    Otherwise fall back to the local hub, optionally under ``category``.
+    """
+    from agent.skill_utils import get_skills_create_dir
+    create_dir = get_skills_create_dir()
+    if create_dir is not None:
+        return create_dir / name
     if category:
         return SKILLS_DIR / category / name
     return SKILLS_DIR / name

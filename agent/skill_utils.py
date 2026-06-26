@@ -324,6 +324,44 @@ def get_external_skills_dirs() -> List[Path]:
     return result
 
 
+def get_skills_create_dir() -> Optional[Path]:
+    """Return ``skills.create_dir`` from config.yaml as an absolute Path, or None.
+
+    When set, ``skill_manage`` *create* authors new skills here instead of the
+    local hub (``get_skills_dir()``). Deployments that keep the hub
+    image-managed — e.g. GRAIL reconciles ``$HERMES_HOME/skills/grail`` on
+    every boot — point this at a durable, user-owned dir so authored skills
+    survive. The directory need not exist yet; the caller creates it on demand.
+    ``~`` and ``${VAR}`` are expanded; relative paths resolve against
+    HERMES_HOME. Returns None when unset (callers fall back to the hub).
+    """
+    config_path = get_config_path()
+    if not config_path.exists():
+        return None
+    try:
+        parsed = yaml_load(config_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    skills_cfg = parsed.get("skills")
+    if not isinstance(skills_cfg, dict):
+        return None
+    raw = skills_cfg.get("create_dir")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+
+    from hermes_constants import get_hermes_home
+
+    expanded = os.path.expanduser(os.path.expandvars(raw.strip()))
+    p = Path(expanded)
+    if not p.is_absolute():
+        p = (get_hermes_home() / p).resolve()
+    else:
+        p = p.resolve()
+    return p
+
+
 def get_all_skills_dirs() -> List[Path]:
     """Return all skill directories: local ``~/.hermes/skills/`` first, then external.
 
