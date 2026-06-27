@@ -1195,3 +1195,23 @@ class TestOpenAIModelExecutionGuidance:
 
 
 
+
+# =========================================================================
+# SKILLS_GUIDANCE — reconcile against existing skills before creating
+# =========================================================================
+
+
+def test_skills_guidance_tells_agent_to_reconcile_before_creating():
+    """SKILLS_GUIDANCE must steer the agent to update an existing skill rather
+    than author a near-duplicate (the cover-memo duplication failure mode)."""
+    from agent.prompt_builder import SKILLS_GUIDANCE
+
+    text = SKILLS_GUIDANCE.lower()
+    # checks for an existing skill before creating
+    assert "before creating a new skill" in text
+    assert "skills_list" in text or "skill_view" in text
+    # prefers updating an existing one over a duplicate
+    assert "instead of creating a near-duplicate" in text
+    # still keeps the original save + patch guidance
+    assert "save the approach as a skill" in text
+    assert "skill_manage" in text
