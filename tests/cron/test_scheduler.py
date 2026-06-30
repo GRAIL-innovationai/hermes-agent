@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
-from cron.scheduler import _resolve_origin, _resolve_delivery_target, _deliver_result, _send_media_via_adapter, run_job, SILENT_MARKER, _build_job_prompt
+from cron.scheduler import _resolve_origin, _resolve_delivery_target, _deliver_result, _send_media_via_adapter, run_job, SILENT_MARKER, _build_job_prompt, _resolve_cron_enabled_toolsets
 from tools.env_passthrough import clear_env_passthrough
 from tools.credential_files import clear_credential_files
 
@@ -2584,3 +2584,50 @@ class TestSendMediaTimeoutCancelsFuture:
         # 2. Second file still got dispatched — one timeout doesn't abort the batch
         adapter.send_video.assert_called_once()
         assert adapter.send_video.call_args[1]["video_path"] == str(fast.resolve())
+
+
+class TestCronMcpToolsets:
+    """A per-job ``enabled_toolsets`` native allowlist must not silently strip
+    MCP tools from scheduled runs (upstream NousResearch/hermes-agent #23997 /
+    #50117). Mirrors the platform-tools default: MCP servers are available
+    unless the job opts out with the ``no_mcp`` sentinel."""
+
+    CFG = {
+        "mcp_servers": {
+            "email-user-read": {"url": "http://127.0.0.1:8648/mcp"},
+            "slack-user-read": {"url": "http://127.0.0.1:8649/mcp"},
+            "off-server": {"url": "http://example.com/mcp", "enabled": False},
+        }
+    }
+
+    def test_native_allowlist_unions_enabled_mcp_servers(self):
+        # The exact failure: enabled_toolsets=['file','skills','terminal'] left
+        # the scheduled agent with no email/slack MCP tools.
+        job = {"enabled_toolsets": ["file", "skills", "terminal"]}
+        result = _resolve_cron_enabled_toolsets(job, self.CFG)
+        assert {"file", "skills", "terminal"} <= set(result)
+        assert "email-user-read" in result
+        assert "slack-user-read" in result
+        assert "off-server" not in result  # disabled servers stay out
+
+    def test_no_mcp_sentinel_opts_out(self):
+        job = {"enabled_toolsets": ["file", "no_mcp"]}
+        result = _resolve_cron_enabled_toolsets(job, self.CFG)
+        assert "file" in result
+        assert "no_mcp" not in result
+        assert "email-user-read" not in result
+        assert "slack-user-read" not in result
+
+    def test_explicit_mcp_allowlist_is_not_widened(self):
+        job = {"enabled_toolsets": ["file", "email-user-read"]}
+        result = _resolve_cron_enabled_toolsets(job, self.CFG)
+        assert "email-user-read" in result
+        assert "slack-user-read" not in result  # explicit allowlist — not widened
+        assert "file" in result
+
+    def test_null_enabled_toolsets_still_includes_mcp_via_platform_path(self):
+        # Regression guard: the platform-tools path already unions MCP; the
+        # per-job merge must not disturb it.
+        job = {"enabled_toolsets": None}
+        result = _resolve_cron_enabled_toolsets(job, self.CFG)
+        assert result is None or "email-user-read" in result

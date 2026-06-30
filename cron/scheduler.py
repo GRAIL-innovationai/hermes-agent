@@ -80,6 +80,35 @@ def _resolve_cron_disabled_toolsets(cfg: dict) -> list[str]:
     return disabled
 
 
+def _merge_mcp_into_per_job_toolsets(toolsets: list[str], cfg: dict) -> list[str]:
+    """Union globally-enabled MCP servers into a per-job ``enabled_toolsets``.
+
+    A native-only allowlist (e.g. ``["file", "terminal"]``) would otherwise
+    silently strip every MCP server's tools from the scheduled run, because the
+    allowlist names no MCP servers — the exact failure in upstream
+    NousResearch/hermes-agent #23997, fixed by #50117. This mirrors the
+    platform-tools default (``_get_platform_tools``): MCP servers are available
+    in cron unless the job opts out.
+
+    - ``no_mcp`` sentinel present -> drop it and exclude all MCP servers.
+    - The list already names >=1 enabled MCP server -> treat as an explicit MCP
+      allowlist; add nothing further.
+    - Otherwise -> union every globally-enabled MCP server name in.
+    """
+    from hermes_cli.tools_config import enabled_mcp_server_names
+
+    enabled_mcp = enabled_mcp_server_names(cfg or {})
+    result = list(toolsets)
+    if "no_mcp" in result:
+        return [t for t in result if t != "no_mcp" and t not in enabled_mcp]
+    if any(t in enabled_mcp for t in result):
+        return result
+    for name in sorted(enabled_mcp):
+        if name not in result:
+            result.append(name)
+    return result
+
+
 def _resolve_cron_enabled_toolsets(job: dict, cfg: dict) -> list[str] | None:
     """Resolve the toolset list for a cron job.
 
@@ -99,7 +128,7 @@ def _resolve_cron_enabled_toolsets(job: dict, cfg: dict) -> list[str] | None:
     """
     per_job = job.get("enabled_toolsets")
     if per_job:
-        return per_job
+        return _merge_mcp_into_per_job_toolsets(per_job, cfg)
     try:
         from hermes_cli.tools_config import _get_platform_tools  # lazy: avoid heavy import at cron module load
         return sorted(_get_platform_tools(cfg or {}, "cron"))
