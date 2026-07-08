@@ -273,6 +273,31 @@ class TestFileDedup(unittest.TestCase):
         self.assertNotIn("dedup", r1)
         self.assertNotIn("dedup", r2)
 
+    def test_suppress_flag_threads_through_real_dispatcher(self):
+        """End-to-end seam check: handle_function_call(suppress_read_dedup=True)
+        must reach read_file_tool through the registry. Neither the unit test
+        (calls the tool directly) nor the sandbox test (mocks the dispatcher)
+        covers this forwarding; a dropped kwarg would pass both."""
+        from model_tools import handle_function_call
+        args = {"path": self._tmpfile}
+
+        # Negative control first: without the flag, the second read through the
+        # real dispatcher returns the dedup stub — proving this test can tell
+        # the difference.
+        json.loads(handle_function_call("read_file", args, task_id="e2e-ctl"))
+        ctl = json.loads(handle_function_call("read_file", args, task_id="e2e-ctl"))
+        self.assertEqual(ctl.get("status"), "unchanged")
+        self.assertNotIn("content", ctl)
+
+        # With the flag: full content on every call.
+        r1 = json.loads(handle_function_call(
+            "read_file", args, task_id="e2e-fix", suppress_read_dedup=True))
+        r2 = json.loads(handle_function_call(
+            "read_file", args, task_id="e2e-fix", suppress_read_dedup=True))
+        self.assertIn("line one", r1.get("content", ""))
+        self.assertIn("line one", r2.get("content", ""))
+        self.assertNotIn("dedup", r2)
+
     @patch("tools.file_tools._get_file_ops")
     def test_write_rejects_internal_read_status_text(self, mock_ops):
         """write_file must not persist internal read_file status text."""
