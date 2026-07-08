@@ -747,6 +747,7 @@ def handle_function_call(
     user_task: Optional[str] = None,
     enabled_tools: Optional[List[str]] = None,
     skip_pre_tool_call_hook: bool = False,
+    suppress_read_dedup: bool = False,
 ) -> str:
     """
     Main function call dispatcher that routes calls to the tool registry.
@@ -837,6 +838,16 @@ def handle_function_call(
                 function_name, function_args,
                 task_id=task_id,
                 enabled_tools=sandbox_enabled,
+            )
+        elif function_name == "read_file" and suppress_read_dedup:
+            # Internal execute_code path flag: programmatic sandbox reads must
+            # return actual content on repeated calls instead of the
+            # model-facing dedup status stub (upstream #44843 / PR #44847).
+            result = registry.dispatch(
+                function_name, function_args,
+                task_id=task_id,
+                user_task=user_task,
+                suppress_dedup=True,
             )
         else:
             result = registry.dispatch(
