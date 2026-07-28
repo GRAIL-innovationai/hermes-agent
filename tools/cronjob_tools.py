@@ -351,6 +351,8 @@ def cronjob(
     workdir: Optional[str] = None,
     profile: Optional[str] = None,
     no_agent: Optional[bool] = None,
+    old_string: Optional[str] = None,
+    new_string: Optional[str] = None,
     task_id: str = None,
 ) -> str:
     """Unified cron job management tool."""
@@ -499,6 +501,54 @@ def cronjob(
             updated = trigger_job(job_id)
             return json.dumps({"success": True, "job": _format_job(updated)}, indent=2)
 
+        if normalized == "edit_prompt":
+            if not old_string:
+                return tool_error(
+                    "old_string is required for edit_prompt — quote the exact text "
+                    "from the job's live prompt that you want to replace.",
+                    success=False,
+                )
+            current_prompt = job.get("prompt") or ""
+            occurrences = current_prompt.count(old_string)
+            if occurrences == 0:
+                return json.dumps(
+                    {
+                        "success": False,
+                        "error": (
+                            "old_string not found in the live prompt. The prompt may "
+                            "differ from what you remember — re-read it below and retry "
+                            "with text quoted exactly from it."
+                        ),
+                        "live_prompt": current_prompt,
+                    },
+                    indent=2,
+                )
+            if occurrences > 1:
+                return tool_error(
+                    f"old_string occurs {occurrences} times in the live prompt — "
+                    "include more surrounding context so it matches exactly once.",
+                    success=False,
+                )
+            new_prompt = current_prompt.replace(old_string, new_string or "", 1)
+            if not new_prompt.strip():
+                return tool_error(
+                    "edit_prompt would leave the prompt empty. Use action='remove' to "
+                    "retire a job; an active job needs a prompt.",
+                    success=False,
+                )
+            scan_error = _scan_cron_prompt(new_prompt)
+            if scan_error:
+                return tool_error(scan_error, success=False)
+            updated = update_job(job_id, {"prompt": new_prompt})
+            return json.dumps(
+                {
+                    "success": True,
+                    "job": _format_job(updated),
+                    "edit": {"old_string": old_string, "new_string": new_string or ""},
+                },
+                indent=2,
+            )
+
         if normalized == "update":
             updates: Dict[str, Any] = {}
             if prompt is not None:
@@ -601,6 +651,7 @@ CRONJOB_SCHEMA = {
 Use action='create' to schedule a new job from a prompt or one or more skills.
 Use action='list' to inspect jobs.
 Use action='update', 'pause', 'resume', 'remove', or 'run' to manage an existing job.
+Use action='edit_prompt' with old_string/new_string for ANY change to an existing job's prompt — quote old_string exactly from the live prompt. This is the only way to make a targeted prompt change; update(prompt=...) replaces the whole prompt.
 
 To stop a job the user no longer wants: first action='list' to find the job_id, then action='remove' with that job_id. Never guess job IDs — always list first.
 
@@ -618,7 +669,7 @@ Important safety rule: cron-run sessions should not recursively schedule more cr
         "properties": {
             "action": {
                 "type": "string",
-                "description": "One of: create, list, update, pause, resume, remove, run"
+                "description": "One of: create, list, update, edit_prompt, pause, resume, remove, run"
             },
             "job_id": {
                 "type": "string",
@@ -712,6 +763,14 @@ Important safety rule: cron-run sessions should not recursively schedule more cr
                 "type": "string",
                 "description": "Optional Hermes profile name to run the job under. When set, the scheduler resolves that profile, applies a context-local Hermes home override, loads that profile's config/.env for the run, and bridges HERMES_HOME into subprocesses. Any temporary process-environment changes from profile .env loading are restored after the job exits. Use 'default' for the root Hermes profile. Named profiles must already exist. When unset (default), preserves the scheduler's existing profile. On update, pass an empty string to clear. Jobs with profile run sequentially (not parallel) to keep profile-scoped runtime state isolated."
             },
+            "old_string": {
+                "type": "string",
+                "description": "For edit_prompt: exact text quoted verbatim from the job's current prompt. Must occur exactly once. If it doesn't match, the error returns the full live prompt so you can re-quote precisely."
+            },
+            "new_string": {
+                "type": "string",
+                "description": "For edit_prompt: replacement text. Empty string deletes old_string."
+            },
         },
         "required": ["action"]
     }
@@ -768,6 +827,8 @@ registry.register(
         workdir=args.get("workdir"),
         profile=args.get("profile"),
         no_agent=args.get("no_agent"),
+        old_string=args.get("old_string"),
+        new_string=args.get("new_string"),
         task_id=kw.get("task_id"),
     ))(),
     check_fn=check_cronjob_requirements,
