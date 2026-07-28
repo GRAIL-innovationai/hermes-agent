@@ -525,10 +525,16 @@ def cronjob(
                     indent=2,
                 )
             if occurrences > 1:
-                return tool_error(
-                    f"old_string occurs {occurrences} times in the live prompt — "
-                    "include more surrounding context so it matches exactly once.",
-                    success=False,
+                return json.dumps(
+                    {
+                        "success": False,
+                        "error": (
+                            f"old_string occurs {occurrences} times in the live prompt — "
+                            "include more surrounding context so it matches exactly once."
+                        ),
+                        "live_prompt": current_prompt,
+                    },
+                    indent=2,
                 )
             new_prompt = current_prompt.replace(old_string, new_string or "", 1)
             if not new_prompt.strip():
@@ -559,7 +565,7 @@ def cronjob(
                     return tool_error(scan_error, success=False)
                 current_prompt = job.get("prompt") or ""
                 if prompt != current_prompt:
-                    if not confirm_full_rewrite:
+                    if confirm_full_rewrite is not True:
                         return json.dumps(
                             {
                                 "success": False,
@@ -697,7 +703,7 @@ Important safety rule: cron-run sessions should not recursively schedule more cr
             },
             "job_id": {
                 "type": "string",
-                "description": "Required for update/pause/resume/remove/run"
+                "description": "Required for update/edit_prompt/pause/resume/remove/run"
             },
             "prompt": {
                 "type": "string",

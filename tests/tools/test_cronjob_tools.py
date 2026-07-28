@@ -419,6 +419,7 @@ class TestEditPromptAction:
         ))
         assert result["success"] is False
         assert "2 times" in result["error"]
+        assert result["live_prompt"] == "Check email. Check email. Report."
         assert self._live_prompt(job_id) == "Check email. Check email. Report."
 
     def test_empty_old_string_rejected(self):
@@ -528,3 +529,11 @@ class TestUpdatePromptGate:
         created = json.loads(cronjob(action="create", prompt="Fresh job prompt.",
                                      schedule="every 1h"))
         assert created["success"] is True
+
+    def test_truthy_string_confirm_does_not_open_gate(self):
+        job_id = self._make_job()
+        result = json.loads(cronjob(action="update", job_id=job_id,
+                                    prompt="Summarize the news.",
+                                    confirm_full_rewrite="no"))
+        assert result["success"] is False
+        assert self._job(job_id)["prompt"] == self.PROMPT
