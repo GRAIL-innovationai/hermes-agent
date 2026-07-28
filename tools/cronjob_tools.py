@@ -353,6 +353,7 @@ def cronjob(
     no_agent: Optional[bool] = None,
     old_string: Optional[str] = None,
     new_string: Optional[str] = None,
+    confirm_full_rewrite: bool = False,
     task_id: str = None,
 ) -> str:
     """Unified cron job management tool."""
@@ -551,10 +552,30 @@ def cronjob(
 
         if normalized == "update":
             updates: Dict[str, Any] = {}
+            replaced_prompt = None
             if prompt is not None:
                 scan_error = _scan_cron_prompt(prompt)
                 if scan_error:
                     return tool_error(scan_error, success=False)
+                current_prompt = job.get("prompt") or ""
+                if prompt != current_prompt:
+                    if not confirm_full_rewrite:
+                        return json.dumps(
+                            {
+                                "success": False,
+                                "error": (
+                                    "update(prompt=...) replaces the ENTIRE prompt and "
+                                    "silently loses anything not restated. For a targeted "
+                                    "change, use action='edit_prompt' with old_string/"
+                                    "new_string quoted from the live prompt below. If a "
+                                    "full rewrite is really intended, re-call update with "
+                                    "confirm_full_rewrite=true."
+                                ),
+                                "live_prompt": current_prompt,
+                            },
+                            indent=2,
+                        )
+                    replaced_prompt = current_prompt
                 updates["prompt"] = prompt
             if name is not None:
                 updates["name"] = name
@@ -635,7 +656,10 @@ def cronjob(
             if not updates:
                 return tool_error("No updates provided.", success=False)
             updated = update_job(job_id, updates)
-            return json.dumps({"success": True, "job": _format_job(updated)}, indent=2)
+            payload = {"success": True, "job": _format_job(updated)}
+            if replaced_prompt is not None:
+                payload["previous_prompt"] = replaced_prompt
+            return json.dumps(payload, indent=2)
 
         return tool_error(f"Unknown cron action '{action}'", success=False)
 
@@ -677,7 +701,7 @@ Important safety rule: cron-run sessions should not recursively schedule more cr
             },
             "prompt": {
                 "type": "string",
-                "description": "For create: the full self-contained prompt. If skills are also provided, this becomes the task instruction paired with those skills."
+                "description": "For create: the full self-contained prompt. If skills are also provided, this becomes the task instruction paired with those skills. For update: full replacement — requires confirm_full_rewrite=true when it differs from the current prompt; prefer action='edit_prompt'."
             },
             "schedule": {
                 "type": "string",
@@ -771,6 +795,11 @@ Important safety rule: cron-run sessions should not recursively schedule more cr
                 "type": "string",
                 "description": "For edit_prompt: replacement text. Empty string deletes old_string."
             },
+            "confirm_full_rewrite": {
+                "type": "boolean",
+                "default": False,
+                "description": "Required (true) when update changes an existing job's prompt — confirms you intend a FULL prompt replacement and accept losing anything not restated. Prefer action='edit_prompt' for targeted changes."
+            },
         },
         "required": ["action"]
     }
@@ -829,6 +858,7 @@ registry.register(
         no_agent=args.get("no_agent"),
         old_string=args.get("old_string"),
         new_string=args.get("new_string"),
+        confirm_full_rewrite=args.get("confirm_full_rewrite", False),
         task_id=kw.get("task_id"),
     ))(),
     check_fn=check_cronjob_requirements,

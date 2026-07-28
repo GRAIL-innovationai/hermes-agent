@@ -458,3 +458,73 @@ class TestEditPromptAction:
                                     old_string="a", new_string="b"))
         assert result["success"] is False
         assert "job_id is required" in result["error"]
+
+
+class TestUpdatePromptGate:
+    @pytest.fixture(autouse=True)
+    def _setup_cron_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("cron.jobs.CRON_DIR", tmp_path / "cron")
+        monkeypatch.setattr("cron.jobs.JOBS_FILE", tmp_path / "cron" / "jobs.json")
+        monkeypatch.setattr("cron.jobs.OUTPUT_DIR", tmp_path / "cron" / "output")
+
+    PROMPT = "Check Outlook and Slack channel C1. Report briefly."
+
+    def _make_job(self):
+        created = json.loads(cronjob(action="create", prompt=self.PROMPT,
+                                     schedule="every 1h"))
+        assert created["success"] is True
+        return created["job_id"]
+
+    def _job(self, job_id):
+        from cron.jobs import get_job
+        return get_job(job_id)
+
+    def test_changed_prompt_without_confirm_refused_with_live_prompt(self):
+        job_id = self._make_job()
+        result = json.loads(cronjob(action="update", job_id=job_id,
+                                    prompt="Summarize the news."))
+        assert result["success"] is False
+        assert "edit_prompt" in result["error"]
+        assert "confirm_full_rewrite" in result["error"]
+        assert result["live_prompt"] == self.PROMPT
+        assert self._job(job_id)["prompt"] == self.PROMPT
+
+    def test_refusal_is_atomic_other_fields_not_applied(self):
+        job_id = self._make_job()
+        result = json.loads(cronjob(action="update", job_id=job_id,
+                                    prompt="Summarize the news.",
+                                    name="Renamed"))
+        assert result["success"] is False
+        job = self._job(job_id)
+        assert job["prompt"] == self.PROMPT
+        assert job.get("name") != "Renamed"
+
+    def test_confirmed_rewrite_applies_and_echoes_previous_prompt(self):
+        job_id = self._make_job()
+        result = json.loads(cronjob(action="update", job_id=job_id,
+                                    prompt="Summarize the news.",
+                                    confirm_full_rewrite=True))
+        assert result["success"] is True
+        assert result["previous_prompt"] == self.PROMPT
+        assert self._job(job_id)["prompt"] == "Summarize the news."
+
+    def test_identical_prompt_not_gated(self):
+        job_id = self._make_job()
+        result = json.loads(cronjob(action="update", job_id=job_id,
+                                    prompt=self.PROMPT))
+        assert result["success"] is True
+        assert "previous_prompt" not in result
+        assert self._job(job_id)["prompt"] == self.PROMPT
+
+    def test_non_prompt_updates_not_gated(self):
+        job_id = self._make_job()
+        result = json.loads(cronjob(action="update", job_id=job_id,
+                                    schedule="every 2h", name="New Name"))
+        assert result["success"] is True
+        assert result["job"]["name"] == "New Name"
+        assert self._job(job_id)["prompt"] == self.PROMPT
+
+    def test_create_is_unaffected(self):
+        created = json.loads(cronjob(action="create", prompt="Fresh job prompt.",
+                                     schedule="every 1h"))
+        assert created["success"] is True
