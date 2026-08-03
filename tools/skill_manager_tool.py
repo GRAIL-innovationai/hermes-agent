@@ -525,10 +525,18 @@ def _create_skill(name: str, content: str, category: str = None) -> Dict[str, An
         shutil.rmtree(skill_dir, ignore_errors=True)
         return {"success": False, "error": scan_error}
 
+    # skills.create_dir may live outside the hub (e.g. /workspace/.grail/skills
+    # on image-managed deployments), where relative_to(SKILLS_DIR) raises —
+    # and the skill already exists on disk at this point, so an exception here
+    # reports failure for an operation that succeeded.
+    try:
+        display_path = str(skill_dir.relative_to(SKILLS_DIR))
+    except ValueError:
+        display_path = str(skill_dir)
     result = {
         "success": True,
         "message": f"Skill '{name}' created.",
-        "path": str(skill_dir.relative_to(SKILLS_DIR)),
+        "path": display_path,
         "skill_md": str(skill_md),
     }
     if category:

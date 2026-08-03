@@ -210,6 +210,29 @@ class TestCreateSkill:
         assert result["success"] is False
         assert "already exists" in result["error"]
 
+    def test_create_in_external_create_dir_reports_success(self, tmp_path):
+        """Regression: when skills.create_dir points OUTSIDE the hub (the
+        production layout — /workspace/.grail/skills on an image-managed
+        deployment), the skill was created on disk but the success payload
+        crashed on skill_dir.relative_to(SKILLS_DIR), so the agent got a
+        TOOL_ERROR for an operation that succeeded and a confusing
+        "already exists" on retry."""
+        hub = tmp_path / "hub"
+        hub.mkdir()
+        create_dir = tmp_path / "workspace-skills"
+        create_dir.mkdir()
+
+        with patch("tools.skill_manager_tool.SKILLS_DIR", hub), \
+             patch("agent.skill_utils.get_all_skills_dirs",
+                   return_value=[hub, create_dir]), \
+             patch("agent.skill_utils.get_skills_create_dir",
+                   return_value=create_dir):
+            result = _create_skill("pies-monthly-workbook", VALID_SKILL_CONTENT)
+
+        assert result["success"] is True
+        assert (create_dir / "pies-monthly-workbook" / "SKILL.md").exists()
+        assert result["path"] == str(create_dir / "pies-monthly-workbook")
+
     def test_create_invalid_name(self, tmp_path):
         with _skill_dir(tmp_path):
             result = _create_skill("Invalid Name!", VALID_SKILL_CONTENT)
