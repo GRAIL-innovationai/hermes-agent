@@ -419,7 +419,7 @@ COMPUTER_USE_GUIDANCE = (
 # give stronger instruction-following weight to the 'developer' role.
 # The swap happens at the API boundary in _build_api_kwargs() so internal
 # message representation stays consistent ("system" everywhere).
-DEVELOPER_ROLE_MODELS = ("gpt-5", "codex")
+DEVELOPER_ROLE_MODELS = ("gpt-5", "gpt-6", "codex")
 
 PLATFORM_HINTS = {
     "whatsapp": (

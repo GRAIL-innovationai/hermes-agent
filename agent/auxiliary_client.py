@@ -203,15 +203,15 @@ def _is_arcee_trinity_thinking(model: Optional[str]) -> bool:
 
 
 def _is_gpt56_sol_model(model: Optional[str]) -> bool:
-    """True for gpt-5.6-sol variants (bare, versioned, or provider-prefixed).
+    """True for gpt-5.6-sol / gpt-6-sol variants (bare, versioned, or prefixed).
 
-    Azure OpenAI serves this reasoning-family model with a strict parameter
+    Azure OpenAI serves these reasoning-family models with a strict parameter
     contract: any non-default ``temperature`` is rejected with 400
     ``unsupported_value`` ("Only the default (1) value is supported"), and
     ``max_tokens`` is rejected in favor of ``max_completion_tokens``.
     """
     bare = (model or "").strip().lower().rsplit("/", 1)[-1]
-    return bare.startswith("gpt-5.6-sol")
+    return bare.startswith(("gpt-5.6-sol", "gpt-6-sol"))
 
 
 def _fixed_temperature_for_model(
@@ -4708,8 +4708,9 @@ def _build_call_kwargs(
         if _skip_max_tokens:
             pass  # ZAI vision models do not accept max_tokens
         elif _is_gpt56_sol_model(model):
-            # gpt-5.6-sol rejects max_tokens outright; the API error says to
-            # use max_completion_tokens instead — regardless of endpoint host.
+            # gpt-5.6-sol / gpt-6-sol reject max_tokens outright; the API error
+            # says to use max_completion_tokens instead — regardless of endpoint
+            # host.
             kwargs["max_completion_tokens"] = max_tokens
         elif provider == "custom":
             custom_base = base_url or _current_custom_base_url()

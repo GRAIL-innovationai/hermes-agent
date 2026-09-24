@@ -1701,12 +1701,13 @@ class TestKimiTemperatureOmitted:
 
 
 class TestGpt56SolParamContract:
-    """gpt-5.6-sol (Azure OpenAI reasoning family) has a strict param contract:
-    any non-default temperature is rejected with 400 unsupported_value ("Only
-    the default (1) value is supported"), and max_tokens is rejected in favor
-    of max_completion_tokens.  Auxiliary callers hardcode temperature (vision
-    0.1, approval 0, web_extract 0.1), so both params must be normalized here
-    or every auxiliary call 400s twice (max_tokens retry, then temperature).
+    """gpt-5.6-sol and gpt-6-sol (Azure OpenAI reasoning family) share a
+    strict param contract: any non-default temperature is rejected with 400
+    unsupported_value ("Only the default (1) value is supported"), and
+    max_tokens is rejected in favor of max_completion_tokens.  Auxiliary
+    callers hardcode temperature (vision 0.1, approval 0, web_extract 0.1), so
+    both params must be normalized here or every auxiliary call 400s twice
+    (max_tokens retry, then temperature).
     """
 
     @pytest.mark.parametrize(
@@ -1716,6 +1717,9 @@ class TestGpt56SolParamContract:
             "gpt-5.6-sol-2026-07-09",
             "azure/gpt-5.6-sol",
             "GPT-5.6-Sol",
+            "gpt-6-sol",
+            "gpt-6-sol-2026-09-22",
+            "azure/gpt-6-sol",
         ],
     )
     def test_omits_temperature(self, model):
@@ -1730,7 +1734,14 @@ class TestGpt56SolParamContract:
 
     @pytest.mark.parametrize(
         "model",
-        ["gpt-5.6-sol", "gpt-5.6-sol-2026-07-09", "azure/gpt-5.6-sol"],
+        [
+            "gpt-5.6-sol",
+            "gpt-5.6-sol-2026-07-09",
+            "azure/gpt-5.6-sol",
+            "gpt-6-sol",
+            "gpt-6-sol-2026-09-22",
+            "azure/gpt-6-sol",
+        ],
     )
     def test_uses_max_completion_tokens(self, model):
         kwargs = _build_call_kwargs(
